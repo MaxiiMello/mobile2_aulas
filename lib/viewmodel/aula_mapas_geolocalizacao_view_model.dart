@@ -6,16 +6,13 @@ import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart';
 
 // =============================================================================
-// AULA 1.5 — MAPAS E GEOLOCALIZAÇÃO — VIEW MODEL (MVVM) — VERSÃO EXERCÍCIO
+// AULA 1.5 — MAPAS E GEOLOCALIZAÇÃO — VIEW MODEL (MVVM)
 // =============================================================================
-// O ViewModel guarda a posição atual (lat/lng) e o estado de carregamento/erro.
-// A lógica de obter a localização do usuário fica aqui; na View só exibimos o
-// mapa e reagimos ao estado. No Flutter Web o navegador pede permissão de
-// localização (igual à aula de permissões).
+// Guarda posição atual, estado de loading/erro e pontos da rota (OSRM).
+// obterMinhaLocalizacao() usa Geolocator; buscarRota() chama a API OSRM.
 // =============================================================================
 
 class AulaMapasGeolocalizacaoViewModel extends ChangeNotifier {
-  /// Centro inicial do mapa (ex.: Brasil) até o usuário clicar em "Minha localização".
   static const LatLng centroInicialPadrao = LatLng(-23.5505, -46.6333);
 
   LatLng? _posicaoAtual;
@@ -33,9 +30,6 @@ class AulaMapasGeolocalizacaoViewModel extends ChangeNotifier {
   bool get rotaLoading => _rotaLoading;
   String? get rotaErro => _rotaErro;
 
-  /// Chamado quando o usuário toca em "Minha localização".
-  /// Deve obter a posição via Geolocator, atualizar _posicaoAtual (ou _mensagemErro)
-  /// e chamar notifyListeners().
   Future<void> obterMinhaLocalizacao() async {
     _loading = true;
     _mensagemErro = null;
@@ -60,7 +54,8 @@ class AulaMapasGeolocalizacaoViewModel extends ChangeNotifier {
         _loading = false;
         notifyListeners();
         return;
-      } else if (permission == LocationPermission.denied) {
+      }
+      if (permission == LocationPermission.denied) {
         _mensagemErro = 'Permissão de localização negada';
         _loading = false;
         notifyListeners();
@@ -79,9 +74,6 @@ class AulaMapasGeolocalizacaoViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Chamado quando o usuário define origem/destino e toca em "Rota até".
-  /// Deve chamar a API OSRM (GET com os dois pontos), parsear a resposta,
-  /// preencher _pontosRota com a lista de LatLng da geometria e chamar notifyListeners().
   Future<void> buscarRota(LatLng origem, LatLng destino) async {
     _rotaLoading = true;
     _rotaErro = null;
@@ -89,28 +81,47 @@ class AulaMapasGeolocalizacaoViewModel extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final url =
-          'https://router.project-osrm.org/route/v1/driving/${origem.longitude},${origem.latitude};${destino.longitude},${destino.latitude}?overview=full&geometries=geojson';
+      final lng1 = origem.longitude;
+      final lat1 = origem.latitude;
+      final lng2 = destino.longitude;
+      final lat2 = destino.latitude;
+      final url = Uri.parse(
+        'https://router.project-osrm.org/route/v1/driving/'
+        '$lng1,$lat1;$lng2,$lat2?overview=full&geometries=geojson',
+      );
+      final response = await http.get(url);
 
-      final response = await http.get(Uri.parse(url));
-
-      if (response.statusCode == 200) {
-        final json = jsonDecode(response.body);
-        final routes = json['routes'] as List?;
-
-        if (routes != null && routes.isNotEmpty) {
-          final coordinates = routes[0]['geometry']['coordinates'] as List?;
-
-          if (coordinates != null) {
-            _pontosRota = coordinates
-                .map((coord) =>
-                    LatLng(coord[1] as double, coord[0] as double))
-                .toList();
-          }
-        }
-      } else {
-        _rotaErro = 'Erro na requisição: ${response.statusCode}';
+      if (response.statusCode != 200) {
+        _rotaErro = 'OSRM retornou ${response.statusCode}';
+        _rotaLoading = false;
+        notifyListeners();
+        return;
       }
+
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      final routes = data['routes'] as List<dynamic>?;
+      if (routes == null || routes.isEmpty) {
+        _rotaErro = 'Nenhuma rota encontrada';
+        _rotaLoading = false;
+        notifyListeners();
+        return;
+      }
+
+      final geometry = routes[0]['geometry'] as Map<String, dynamic>?;
+      final coords = geometry?['coordinates'] as List<dynamic>?;
+      if (coords == null || coords.isEmpty) {
+        _rotaErro = 'Geometria da rota vazia';
+        _rotaLoading = false;
+        notifyListeners();
+        return;
+      }
+
+      _pontosRota = coords.map((c) {
+        final list = c as List<dynamic>;
+        final lng = (list[0] as num).toDouble();
+        final lat = (list[1] as num).toDouble();
+        return LatLng(lat, lng);
+      }).toList();
     } catch (e) {
       _rotaErro = 'Erro ao buscar rota: $e';
     }
