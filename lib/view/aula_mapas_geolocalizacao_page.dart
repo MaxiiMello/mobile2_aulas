@@ -88,14 +88,13 @@ class _AulaMapasGeolocalizacaoPageState
               if (posicao != null)
                 MarkerLayer(
                   markers: [
-                    // TODO: criar Marker com point: posicao e um Icon de localização
                     Marker(
                       point: posicao,
                       width: 48,
                       height: 48,
                       child: Icon(
-                        Icons.location_on,
-                        color: Colors.red.shade700,
+                        Icons.gps_fixed,
+                        color: Colors.green.shade700,
                         size: 48,
                       ),
                     ),
@@ -109,7 +108,7 @@ class _AulaMapasGeolocalizacaoPageState
                   polylines: [
                     Polyline(
                       points: pontosRota,
-                      color: Colors.blue,
+                      color: Colors.purple.shade600,
                       strokeWidth: 4,
                     ),
                   ],

@@ -1,4 +1,8 @@
+import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart';
 
 // =============================================================================
@@ -37,22 +41,41 @@ class AulaMapasGeolocalizacaoViewModel extends ChangeNotifier {
     _mensagemErro = null;
     notifyListeners();
 
-    // TODO: implementar obtenção da localização atual.
-    // Dicas:
-    // 1. Verificar se o serviço de localização está habilitado
-    //    (Geolocator.isLocationServiceEnabled).
-    // 2. Verificar/solicitar permissão (Geolocator.checkPermission e
-    //    Geolocator.requestPermission).
-    // 3. Obter a posição com Geolocator.getCurrentPosition().
-    // 4. Converter para LatLng: LatLng(position.latitude, position.longitude)
-    //    e guardar em _posicaoAtual.
-    // 5. Em caso de erro (catch), guardar a mensagem em _mensagemErro.
-    // 6. Ao final, _loading = false e notifyListeners().
-    //
-    // Não esquecer o import: import 'package:geolocator/geolocator.dart';
+    try {
+      final serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) {
+        _mensagemErro = 'Serviço de localização desabilitado';
+        _loading = false;
+        notifyListeners();
+        return;
+      }
+
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+
+      if (permission == LocationPermission.deniedForever) {
+        _mensagemErro = 'Permissão de localização negada permanentemente';
+        _loading = false;
+        notifyListeners();
+        return;
+      } else if (permission == LocationPermission.denied) {
+        _mensagemErro = 'Permissão de localização negada';
+        _loading = false;
+        notifyListeners();
+        return;
+      }
+
+      final Position position = await Geolocator.getCurrentPosition();
+      _posicaoAtual = LatLng(position.latitude, position.longitude);
+      _mensagemErro = null;
+    } catch (e) {
+      _mensagemErro = 'Erro ao obter localização: $e';
+      _posicaoAtual = null;
+    }
+
     _loading = false;
-    _posicaoAtual = null;
-    _mensagemErro = 'TODO: implementar obterMinhaLocalizacao()';
     notifyListeners();
   }
 
@@ -65,18 +88,34 @@ class AulaMapasGeolocalizacaoViewModel extends ChangeNotifier {
     _pontosRota = [];
     notifyListeners();
 
-    // TODO: implementar obtenção da rota via OSRM.
-    // Dicas:
-    // 1. Montar a URL: https://router.project-osrm.org/route/v1/driving/
-    //    {lngOrigem},{latOrigem};{lngDestino},{latDestino}?overview=full&geometries=geojson
-    //    (OSRM usa longitude,latitude na URL).
-    // 2. Fazer GET com o pacote http (import 'package:http/http.dart' as http).
-    // 3. Parsear o JSON: response.body → jsonDecode → routes[0].geometry.coordinates.
-    //    Cada item é [longitude, latitude]; converter para LatLng(lat, lng).
-    // 4. Atribuir a lista a _pontosRota. Em erro (status != 200 ou exceção), setar _rotaErro.
-    // 5. _rotaLoading = false e notifyListeners().
+    try {
+      final url =
+          'https://router.project-osrm.org/route/v1/driving/${origem.longitude},${origem.latitude};${destino.longitude},${destino.latitude}?overview=full&geometries=geojson';
+
+      final response = await http.get(Uri.parse(url));
+
+      if (response.statusCode == 200) {
+        final json = jsonDecode(response.body);
+        final routes = json['routes'] as List?;
+
+        if (routes != null && routes.isNotEmpty) {
+          final coordinates = routes[0]['geometry']['coordinates'] as List?;
+
+          if (coordinates != null) {
+            _pontosRota = coordinates
+                .map((coord) =>
+                    LatLng(coord[1] as double, coord[0] as double))
+                .toList();
+          }
+        }
+      } else {
+        _rotaErro = 'Erro na requisição: ${response.statusCode}';
+      }
+    } catch (e) {
+      _rotaErro = 'Erro ao buscar rota: $e';
+    }
+
     _rotaLoading = false;
-    _rotaErro = 'TODO: implementar buscarRota()';
     notifyListeners();
   }
 }
