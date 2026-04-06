@@ -2,7 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 // TODO: ao implementar obterLocalizacaoAtual() com Geolocator, adicione:
-// import 'package:geolocator/geolocator.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:sensors_plus/sensors_plus.dart';
 
 // =============================================================================
@@ -41,8 +41,38 @@ class AulaSensoresHardwareViewModel extends ChangeNotifier {
     // 2) Atualizar ax/ay/az e gx/gy/gz dentro dos listeners.
     // 3) Chamar notifyListeners() quando atualizar leituras.
     // 4) Lidar com múltiplos cliques (evitar dupla assinatura).
+    if (_accSub != null || _gyrSub != null || sensoresAtivos) {
+      return;
+    }
+
+    mensagemErro = null;
+    _accSub = userAccelerometerEventStream().listen(
+      (event) {
+        ax = event.x;
+        ay = event.y;
+        az = event.z;
+        notifyListeners();
+      },
+      onError: (Object _) {
+        mensagemErro = 'Erro ao ler acelerometro.';
+        notifyListeners();
+      },
+    );
+
+    _gyrSub = gyroscopeEventStream().listen(
+      (event) {
+        gx = event.x;
+        gy = event.y;
+        gz = event.z;
+        notifyListeners();
+      },
+      onError: (Object _) {
+        mensagemErro = 'Erro ao ler giroscopio.';
+        notifyListeners();
+      },
+    );
+
     sensoresAtivos = true;
-    mensagemErro = 'TODO: implementar iniciarMonitoramentoSensores()';
     notifyListeners();
   }
 
@@ -52,6 +82,10 @@ class AulaSensoresHardwareViewModel extends ChangeNotifier {
     // 1) await _accSub?.cancel(); await _gyrSub?.cancel();
     // 2) Limpar referências das subscriptions (setar null).
     // 3) Atualizar sensoresAtivos e notifyListeners().
+    await _accSub?.cancel();
+    await _gyrSub?.cancel();
+    _accSub = null;
+    _gyrSub = null;
     sensoresAtivos = false;
     notifyListeners();
   }
@@ -68,7 +102,35 @@ class AulaSensoresHardwareViewModel extends ChangeNotifier {
     // 3) Chamar Geolocator.getCurrentPosition() se permitido.
     // 4) Atualizar latitude/longitude/precisao e notifyListeners().
     // 5) Em erro, preencher mensagemErro.
-    mensagemErro = 'TODO: implementar obterLocalizacaoAtual()';
+    try {
+      final serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) {
+        mensagemErro = 'Servico de localizacao desativado.';
+        return;
+      }
+
+      var permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+
+      if (permission == LocationPermission.denied) {
+        mensagemErro = 'Permissao de localizacao negada.';
+        return;
+      }
+
+      if (permission == LocationPermission.deniedForever) {
+        mensagemErro = 'Permissao negada permanentemente.';
+        return;
+      }
+
+      final pos = await Geolocator.getCurrentPosition();
+      latitude = pos.latitude;
+      longitude = pos.longitude;
+      precisao = pos.accuracy;
+    } catch (_) {
+      mensagemErro = 'Falha ao obter localizacao atual.';
+    }
 
     gpsLoading = false;
     notifyListeners();
@@ -82,6 +144,8 @@ class AulaSensoresHardwareViewModel extends ChangeNotifier {
     // - criar método sync auxiliar para cancelar.
     _accSub?.cancel();
     _gyrSub?.cancel();
+    _accSub = null;
+    _gyrSub = null;
     super.dispose();
   }
 }
